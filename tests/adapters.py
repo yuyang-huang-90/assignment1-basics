@@ -76,6 +76,22 @@ def run_embedding(
     model.load_state_dict({"weights": weights})
     return model.forward(token_ids)
 
+class SwiGLUModule(torch.nn.Module):
+    def __init__(self, d_model, d_ff):
+        super().__init__()
+        self.d_model = d_model
+        self.d_ff = d_ff
+        self.w1_weight = torch.nn.Parameter(torch.randn(d_ff, d_model))
+        self.w2_weight = torch.nn.Parameter(torch.randn(d_model, d_ff))
+        self.w3_weight = torch.nn.Parameter(torch.randn(d_ff, d_model))
+
+    def sliu(self, x: torch.Tensor):
+        return x / (1 + torch.exp(-x))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return (self.sliu(x @ self.w1_weight.T) * (x @ self.w3_weight.T)) @ self.w2_weight.T
+
+
 def run_swiglu(
     d_model: int,
     d_ff: int,
@@ -105,7 +121,9 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    model = SwiGLUModule(d_model, d_ff)
+    model.load_state_dict({"w1_weight": w1_weight, "w2_weight": w2_weight, "w3_weight": w3_weight})
+    return model.forward(in_features)
 
 
 def run_scaled_dot_product_attention(

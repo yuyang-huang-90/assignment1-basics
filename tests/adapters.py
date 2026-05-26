@@ -221,6 +221,26 @@ def run_multihead_self_attention_with_rope(
     raise NotImplementedError
 
 
+class RotaryPositionalEmbedding(torch.nn.Module):
+    def __init__(self, theta: float, d_k: int, max_seq_len: int):
+        super().__init__()
+        self.theta = theta
+        self.d_k = d_k
+        self.max_seq_len = max_seq_len
+        indicies = torch.arange(d_k // 2)
+        m = torch.arange(max_seq_len)
+        angle = m.unsqueeze(-1) * (theta ** (-2 * indicies/d_k))
+        self.register_buffer('angle', angle, persistent=False)
+
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
+        angle = self.angle[token_positions]
+        cos, sin = torch.cos(angle), torch.sin(angle)
+        x1, x2 = x[..., 0::2], x[..., 1::2]
+
+        out = torch.stack([x1 * cos - x2 * sin, x1 * sin + x2 * cos], dim=-1)
+        return out.reshape(x.shape)
+
+
 def run_rope(
     d_k: int,
     theta: float,
@@ -240,7 +260,8 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    model = RotaryPositionalEmbedding(theta, d_k, max_seq_len)
+    return model.forward(in_query_or_key, token_positions)
 
 
 def run_transformer_block(

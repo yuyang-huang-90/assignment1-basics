@@ -15,11 +15,10 @@ class LinearModule(torch.nn.Module):
         super().__init__()
         self.d_in = d_in
         self.d_out = d_out
-        self.weight = torch.nn.Parameter(torch.randn(self.d_out, self.d_in, device=device, dtype=dtype))
+        self.weights = torch.nn.Parameter(torch.randn(self.d_out, self.d_in, device=device, dtype=dtype))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return einsum(self.weight, x, "d_out d_in, ... d_in -> ... d_out")
-
+        return einsum(self.weights, x, "d_out d_in, ... d_in -> ... d_out")
 
 def run_linear(
     d_in: int,
@@ -42,9 +41,16 @@ def run_linear(
     device = in_features.device
     dtype = in_features.dtype
     model = LinearModule(d_in, d_out, device, dtype)
-    model.load_state_dict({"weight": weights})
+    model.load_state_dict({"weights": weights})
     return model.forward(in_features)
 
+class EmbeddingModule(torch.nn.Module):
+    def __init__(self, vocab_size, d_model, device=None, dtype=None):
+        super().__init__()
+        self.weights = torch.nn.Parameter(torch.randn(vocab_size, d_model, device=device, dtype=dtype))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.weights[x]
 
 def run_embedding(
     vocab_size: int,
@@ -64,9 +70,11 @@ def run_embedding(
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
-
-    raise NotImplementedError
-
+    device = weights.device
+    dtype = weights.dtype
+    model = EmbeddingModule(vocab_size, d_model, device, dtype)
+    model.load_state_dict({"weights": weights})
+    return model.forward(token_ids)
 
 def run_swiglu(
     d_model: int,

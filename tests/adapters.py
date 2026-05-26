@@ -379,6 +379,20 @@ def run_transformer_lm(
     """
     raise NotImplementedError
 
+class RmsNormModule(torch.nn.Module):
+    def __init__(self, d_model, eps, device=None, dtype=None):
+        super().__init__()
+        self.weights = torch.nn.Parameter(torch.randn(d_model, device=device, dtype=dtype))
+        self.d_model = d_model
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        in_dtype = x.dtype
+        x = x.to(torch.float32)
+        rms = torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps)
+        weights = self.weights.to(torch.float32)
+        result = x / rms * weights
+        return result.to(in_dtype)
 
 def run_rmsnorm(
     d_model: int,
@@ -400,7 +414,11 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    device = weights.device
+    dtype = weights.dtype
+    model = RmsNormModule(d_model, eps, device, dtype)
+    model.load_state_dict({"weights": weights})
+    return model.forward(in_features)
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:

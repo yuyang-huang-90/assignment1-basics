@@ -8,6 +8,17 @@ import numpy.typing as npt
 import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
+from einops import einsum
+
+class LinearModule(torch.nn.Module):
+    def __init__(self, d_in, d_out, device=None, dtype=None):
+        super().__init__()
+        self.d_in = d_in
+        self.d_out = d_out
+        self.weight = torch.nn.Parameter(torch.randn(self.d_out, self.d_in, device=device, dtype=dtype))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return einsum(self.weight, x, "d_out d_in, ... d_in -> ... d_out")
 
 
 def run_linear(
@@ -28,8 +39,11 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
-
-    raise NotImplementedError
+    device = in_features.device
+    dtype = in_features.dtype
+    model = LinearModule(d_in, d_out, device, dtype)
+    model.load_state_dict({"weight": weights})
+    return model.forward(in_features)
 
 
 def run_embedding(

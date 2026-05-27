@@ -8,7 +8,7 @@ import numpy.typing as npt
 import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
-from einops import einsum
+from einops import einsum, rearrange
 
 class LinearModule(torch.nn.Module):
     def __init__(self, d_in, d_out, device=None, dtype=None):
@@ -185,7 +185,18 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_model"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    q_proj = in_features @ q_proj_weight.T
+    k_proj = in_features @ k_proj_weight.T
+    v_proj = in_features @ v_proj_weight.T
+    Q = rearrange(q_proj, "... sequence_length (num_heads d_k) -> ... num_heads sequence_length d_k", num_heads=num_heads)
+    K = rearrange(k_proj, "... sequence_length (num_heads d_k) -> ... num_heads sequence_length d_k", num_heads=num_heads)
+    V = rearrange(v_proj, "... sequence_length (num_heads d_v) -> ... num_heads sequence_length d_v", num_heads=num_heads)
+    seq_len = in_features.shape[-2]
+    mask = torch.ones(seq_len, seq_len, device=in_features.device)
+    mask = torch.tril(mask).bool()
+    output = run_scaled_dot_product_attention(Q, K, V, mask)
+    output = rearrange(output, "... num_heads sequence_length d_v -> ... sequence_length (num_heads d_v)", num_heads=num_heads)
+    return output @ o_proj_weight.T
 
 
 def run_multihead_self_attention_with_rope(
@@ -225,7 +236,23 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_model"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    seq_len = in_features.shape[-2]
+    d_k = d_model // num_heads
+    if token_positions is None:
+        token_positions = torch.arange(seq_len, device=in_features.device)
+    q_proj = in_features @ q_proj_weight.T
+    k_proj = in_features @ k_proj_weight.T
+    v_proj = in_features @ v_proj_weight.T
+    Q = rearrange(q_proj, "... sequence_length (num_heads d_k) -> ... num_heads sequence_length d_k", num_heads=num_heads)
+    K = rearrange(k_proj, "... sequence_length (num_heads d_k) -> ... num_heads sequence_length d_k", num_heads=num_heads)
+    V = rearrange(v_proj, "... sequence_length (num_heads d_v) -> ... num_heads sequence_length d_v", num_heads=num_heads)
+    positions = token_positions.unsqueeze(-2) 
+    Q = run_rope(d_k, theta, max_seq_len, Q, positions)
+    K = run_rope(d_k, theta, max_seq_len, K, positions)
+    mask = torch.tril(torch.ones(seq_len, seq_len, device=in_features.device)).bool()
+    output = run_scaled_dot_product_attention(Q, K, V, mask)
+    output = rearrange(output, "... h seq d -> ... seq (h d)", h=num_heads)
+    return output @ o_proj_weight.T
 
 
 class RotaryPositionalEmbedding(torch.nn.Module):

@@ -368,8 +368,39 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    eps = 1e-5
 
+    normed = run_rmsnorm(d_model, eps, weights["ln1.weight"], in_features)
+
+    attn = run_multihead_self_attention_with_rope(
+        d_model=d_model,
+        num_heads=num_heads,
+        max_seq_len=max_seq_len,
+        theta=theta,
+        q_proj_weight=weights["attn.q_proj.weight"],
+        k_proj_weight=weights["attn.k_proj.weight"],
+        v_proj_weight=weights["attn.v_proj.weight"],
+        o_proj_weight=weights["attn.output_proj.weight"],
+        in_features=normed,
+        token_positions=None
+    )
+
+    x = in_features + attn
+
+    normed = run_rmsnorm(d_model=d_model, eps=eps, weights=weights["ln2.weight"], in_features=x)
+
+    ffn_out = run_swiglu(
+        d_model=d_model,
+        d_ff=d_ff,
+        w1_weight=weights["ffn.w1.weight"],
+        w2_weight=weights["ffn.w2.weight"],
+        w3_weight=weights["ffn.w3.weight"],
+        in_features=normed,
+    )
+
+    x = x + ffn_out
+
+    return x
 
 def run_transformer_lm(
     vocab_size: int,
